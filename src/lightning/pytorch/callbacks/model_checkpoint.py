@@ -26,7 +26,7 @@ import warnings
 from copy import deepcopy
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional, Set
+from typing import Any, Dict, Literal, Optional, Set, Callable, Union
 from weakref import proxy
 
 import torch
@@ -96,6 +96,12 @@ class ModelCheckpoint(Checkpoint):
             appended with a version count starting with ``v1``
             unless ``enable_version_counter`` is set to False.
         mode: one of {min, max}.
+        external_context: Optional context to include in the checkpoint filename. This can be either a
+            callable that returns a value to include in the filename or a string that will be evaluated.
+            Default: None.
+        external_context: Optional context to include in the checkpoint filename. This can be either a
+            callable that returns a value to include in the filename or a string that will be evaluated.
+            Default: None.
             If ``save_top_k != 0``, the decision to overwrite the current save file is made
             based on either the maximization or the minimization of the monitored quantity.
             For ``'val_acc'``, this should be ``'max'``, for ``'val_loss'`` this should be ``'min'``, etc.
@@ -214,6 +220,7 @@ class ModelCheckpoint(Checkpoint):
         self,
         dirpath: Optional[_PATH] = None,
         filename: Optional[str] = None,
+        external_context: Optional[Union[Callable, str]] = None,
         monitor: Optional[str] = None,
         verbose: bool = False,
         save_last: Optional[Literal[True, False, "link"]] = None,
@@ -236,6 +243,7 @@ class ModelCheckpoint(Checkpoint):
         self.auto_insert_metric_name = auto_insert_metric_name
         self._save_on_train_epoch_end = save_on_train_epoch_end
         self._enable_version_counter = enable_version_counter
+        self.external_context = external_context
         self._last_global_step_saved = 0  # no need to save when no steps were taken
         self._last_time_checked: Optional[float] = None
         self.current_score: Optional[Tensor] = None
@@ -597,6 +605,15 @@ class ModelCheckpoint(Checkpoint):
 
         """
         filename = filename or self.filename
+        external_context_value = None
+        if callable(self.external_context):
+            external_context_value = self.external_context()
+        elif isinstance(self.external_context, str):
+            external_context_value = eval(self.external_context)
+
+        if external_context_value is not None:
+            metrics['external_context'] = torch.tensor(external_context_value)
+
         filename = self._format_checkpoint_name(filename, metrics, auto_insert_metric_name=self.auto_insert_metric_name)
 
         if ver is not None:

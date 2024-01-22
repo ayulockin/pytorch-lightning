@@ -1518,7 +1518,42 @@ def test_save_last_every_n_epochs_interaction(tmpdir, every_n_epochs):
     assert mc.last_model_path  # a "last" ckpt was saved
     assert save_mock.call_count == trainer.max_epochs
 
+def test_model_checkpoint_format_with_wandb_run_name(tmpdir, monkeypatch):
+    """Test that the ModelCheckpoint callback correctly formats the checkpoint filename with the wandb run name."""
+    # Mock wandb run name
+    mock_wandb_run_name = "mocked_run"
+    monkeypatch.setattr("wandb.run.name", mock_wandb_run_name, raising=False)
 
+    # Create a ModelCheckpoint with external_context set to use the mock wandb run name
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=tmpdir,
+        filename="{wandb.run.name}-epoch{epoch}-val_loss{val_loss:.2f}",
+        monitor="val_loss",
+        save_top_k=1,
+        external_context="wandb.run.name"
+    )
+
+    # Simulate training and checkpointing process
+    trainer = Trainer(
+        default_root_dir=tmpdir,
+        max_epochs=1,
+        callbacks=[checkpoint_callback],
+        limit_train_batches=1,
+        limit_val_batches=1,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+        logger=False,
+    )
+    model = BoringModel()
+    with patch.object(trainer, "save_checkpoint") as save_mock:
+        trainer.fit(model)
+        # Simulate validation loss and epoch for checkpointing
+        trainer.callback_metrics.update({"val_loss": torch.tensor(0.5), "epoch": torch.tensor(2)})
+        checkpoint_callback.on_validation_end(trainer, model)
+
+    # Assert the checkpoint filename contains the mock wandb run name
+    expected_filename = f"{mock_wandb_run_name}-epoch2-val_loss0.50.ckpt"
+    save_mock.assert_called_with(tmpdir / expected_filename, False)
 def test_train_epoch_end_ckpt_with_no_validation():
     trainer = Trainer(val_check_interval=0.5)
     trainer.fit_loop.epoch_loop.val_loop._max_batches = [0]
