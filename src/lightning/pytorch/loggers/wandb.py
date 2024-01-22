@@ -415,10 +415,23 @@ class WandbLogger(Logger):
 
     @override
     @rank_zero_only
-    def log_hyperparams(self, params: Union[Dict[str, Any], Namespace]) -> None:  # type: ignore[override]
+    def log_hyperparams(self, params: Union[Dict[str, Any], Namespace], exclude_keys: Optional[List[str]] = None) -> None:  # type: ignore[override]
         params = _convert_params(params)
-        params = _sanitize_callable_params(params)
+        params = _sanitize_callable_params(params, exclude_keys=exclude_keys)
         self.experiment.config.update(params, allow_val_change=True)
+
+        """
+        Logs hyperparameters to Weights & Biases.
+
+        If some parameters are callable (e.g., a model factory), they can be excluded from being called and
+        logged by specifying them in the 'exclude_keys' argument. This is useful when the callable creates
+        large models that should not be instanced more than necessary.
+
+        Args:
+            params: Dictionary containing the hyperparameters
+            exclude_keys: Optional list of keys to exclude from logging when callable
+        """
+    
 
     @override
     @rank_zero_only
