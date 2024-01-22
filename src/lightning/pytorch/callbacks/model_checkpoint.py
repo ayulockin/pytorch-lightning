@@ -32,6 +32,7 @@ from weakref import proxy
 import torch
 import yaml
 from torch import Tensor
+import wandb
 from typing_extensions import override
 
 import lightning.pytorch as pl
@@ -534,6 +535,7 @@ class ModelCheckpoint(Checkpoint):
         metrics: Dict[str, Tensor],
         prefix: str = "",
         auto_insert_metric_name: bool = True,
+        wandb_run_name: Optional[str] = None
     ) -> str:
         if not filename:
             # filename is not set, use default name
@@ -543,6 +545,13 @@ class ModelCheckpoint(Checkpoint):
         groups = re.findall(r"(\{.*?)[:\}]", filename)
 
         # sort keys from longest to shortest to avoid replacing substring
+        # Check if wandb is available and wandb_run_name not provided
+        if 'wandb' in globals() and hasattr(wandb, 'run') and wandb.run and wandb_run_name is None:
+            wandb_run_name = wandb.run.name
+        # Include wandb run name if provided and not done earlier
+        if wandb_run_name and not filename.startswith(f"{wandb_run_name}-"):
+            sanitized_wandb_run_name = wandb_run_name.replace(' ', '_')
+            filename = f"{sanitized_wandb_run_name}-{filename}"
         # eg: if keys are "epoch" and "epoch_test", the latter must be replaced first
         groups = sorted(groups, key=lambda x: len(x), reverse=True)
 
@@ -565,8 +574,11 @@ class ModelCheckpoint(Checkpoint):
         return filename
 
     def format_checkpoint_name(
-        self, metrics: Dict[str, Tensor], filename: Optional[str] = None, ver: Optional[int] = None
+        self, metrics: Dict[str, Tensor], filename: Optional[str] = None, ver: Optional[int] = None, wandb_run_name: Optional[str] = None
     ) -> str:
+
+        if 'wandb' in globals() and hasattr(wandb, 'run') and wandb.run:
+            wandb_run_name = wandb.run.name
         """Generate a filename according to the defined template.
 
         Example::
@@ -594,9 +606,16 @@ class ModelCheckpoint(Checkpoint):
             >>> ckpt = ModelCheckpoint(filename='{step}')
             >>> os.path.basename(ckpt.format_checkpoint_name(dict(step=0)))
             'step=0.ckpt'
+            >>> ckpt = ModelCheckpoint(filename='{epoch}')
+            >>> os.path.basename(ckpt.format_checkpoint_name(dict(epoch=0), wandb_run_name='run123'))
+            'run123-epoch=0.ckpt'
 
         """
         filename = filename or self.filename
+        # Include wandb run name if provided
+        if wandb_run_name:
+            sanitized_wandb_run_name = wandb_run_name.replace(' ', '_')
+            filename = f"{sanitized_wandb_run_name}-{filename}"
         filename = self._format_checkpoint_name(filename, metrics, auto_insert_metric_name=self.auto_insert_metric_name)
 
         if ver is not None:
